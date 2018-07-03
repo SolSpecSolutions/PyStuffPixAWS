@@ -1,4 +1,5 @@
-#!/usr/bin/python2.7
+#!/usr/bin/env python
+
 #Import libraries
 import boto3
 import subprocess
@@ -8,21 +9,30 @@ from scp import SCPClient
 
 #Variables
 s3In = raw_input("Enter full Project path: ")
-key = paramiko.RSAKey.from_private_key_file("E:\SolSpec\jmooreh\Documents\AWS\PEM\Pix4DProcessingServers.pem")
+key = paramiko.RSAKey.from_private_key_file("/home/ubuntu/Documents/Pix4DProcessingServers.pem")
 conn = paramiko.SSHClient()
 conn.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 user = "ubuntu"
-lclPath = s\\'E:\\SolSpec\\jmooreh\\Documents\\GitHub\\Scripts\\Bash\\ProcessingScript'
-script1 = 'LS_NoGeoFile_PixScript_v2.0.sh'
-script2 = 'LS_GeoFile_PixScript_v2.0.sh'
+lclPath = '/home/ubuntu/Documents/Scripts/'
+#script1 = 'LS_NoGeoFile_PixScript_v2.0.sh'
+#script2 = 'LS_GeoFile_PixScript_v2.0.sh'
 remPath = '/home/ubuntu/pix4d/'
 #commands = ["echo $PATH", "cat /etc/fstab"]
+
+#Determine which script to use - drone or waldo
+if "drone" in s3In:
+	script = 'LS_NoGeoFile_PixScript_v2.1.sh'
+elif "waldo" in s3In:
+	script = 'LS_GeoFile_PixScript_v2.1.sh'
+else:
+	print("Project path is not correct. Please use correct Drone or Waldo folder path.")
+	exit(1)
 
 #Query AWS for all available Processing server (by Role tag and state code = 80 - stopped)
 ec2 = boto3.resource('ec2')
 instances = ec2.instances.filter(
     Filters=[
-        {'Name': 'tag:Role', 'Values': ['ProcessingTestJohn']},
+        {'Name': 'tag:Role', 'Values': ['ProcessingTest']},
         {'Name': 'instance-state-code', 'Values': ['80']}
     ]
 )
@@ -46,8 +56,8 @@ else:
             #print(serverName)
     connStr = "ubuntu@" + instDNSName
 
-commands = {"sudo chmod +x " "{0}{1}".format(remPath, script1), "sudo chmod +x " "{0}{1}".format(remPath, script2),
-            "{0}{1} {2} {3} {4} {5}".format(remPath, script1, s3In, inst, script1, serverName)}
+#commands = {"sudo chmod +x " "{0}{1}".format(remPath, script),
+#            "{0}{1} {2} {3} {4} {5}".format(remPath, script, s3In, inst, script, serverName)}
 
 print("Starting server " + serverName)
 subprocess.call(['aws', 'ec2', 'start-instances', '--instance-ids', inst])
@@ -59,14 +69,29 @@ time.sleep(120)
 conn.connect(hostname = instDNSName, username = user, pkey = key)
 print("Copying local processing scripts to remote server")
 with SCPClient(conn.get_transport()) as scp:
-    scp.put(lclPath + script1, remPath + script1)
-    scp.put(lclPath + script2, remPath + script2)
+    scp.put(lclPath + script, remPath + script)
+    #scp.put(lclPath + script2, remPath + script2)
 
-for command in commands:
-    print "Executing {}".format(command)
-    stdin, stdout, stderr = conn.exec_command(command)
-    print stdout.read()
-    print("Errors")
-    print stderr.read()
+print("Make local script executable")
+print("Executing {}".format("sudo chmod +x " "{0}{1}".format(remPath, script)))
+stdin, stdout, stderr = conn.exec_command("sudo chmod +x " "{0}{1}".format(remPath, script))
+print stdout.read()
+print("Errors")
+print stderr.read()
+
+print("Executing script on remote Pix server")
+print("Executing {}".format("{0}{1} {2} {3} {4} {5}".format(remPath, script, s3In, inst, script, serverName)))
+stdin, stdout, stderr = conn.exec_command("{0}{1} {2} {3} {4} {5}".format(remPath, script, s3In, inst, script, serverName))
+print stdout.read()
+print("Errors")
+print stderr.read()
+
+#for command in commands:
+#    print "Executing {}".format(command)
+#    stdin, stdout, stderr = conn.exec_command(command)
+#    print stdout.read()
+#    print("Errors")
+#    print stderr.read()
 conn.close()
+exit(0)
 
